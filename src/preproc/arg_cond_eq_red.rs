@@ -1,8 +1,11 @@
 //!
 
+use num::BigInt;
 use std::vec;
-
-use num::Integer;
+use std::fs::File;
+use std::io::{BufReader, Lines, prelude::*};
+use std::path::Path;
+use std::process::Command;
 
 use crate::{
     common::{
@@ -10,18 +13,19 @@ use crate::{
         *,
     },
     data::Data,
-    preproc::{PreInstance, RedStrat, arg_eq_red_common::*},
+    preproc::{PreInstance, RedStrat},
 };
 
-pub struct ArgEqRed {}
 
-impl RedStrat for ArgEqRed {
+pub struct ArgCondEqRed {}
+
+impl RedStrat for ArgCondEqRed {
     fn name(&self) -> &'static str {
-        "arg_eq_reduce"
+        "arg_cond_eq_reduce"
     }
 
     fn new(_: &Instance) -> Self {
-        ArgEqRed {}
+        ArgCondEqRed {}
     }
 
     fn apply(&mut self, instance: &mut PreInstance) -> Res<RedInfo> {
@@ -54,7 +58,7 @@ impl RedStrat for ArgEqRed {
         }
         println!("}}");
 
-        let reductor = ArgEqReductor::new(instance)?;
+        let reductor = ArgCondEqReductor::new(instance)?;
         let (constraints, to_keep) = reductor.run()?;
 
         if conf.preproc.arg_eq_red_check {
@@ -157,32 +161,6 @@ impl RedStrat for ArgEqRed {
         }
         println!("}}");
 
-        // if !conf.preproc.arg_eq_red2 {
-        //     let mut w = std::io::stdout();
-        //     println!("clauses_after {{");
-        //     for (cls_idx, cls) in instance.clauses().index_iter() {
-        //         write!(w, "(assert (forall (")?;
-        //         let mut inactive = 0;
-        //         for var in &cls.vars {
-        //             if var.active {
-        //                 write!(w, " (")?;
-        //                 var.idx.default_write(&mut w)?;
-        //                 write!(w, " {})", var.typ)?;
-        //             } else {
-        //                 inactive += 1;
-        //             }
-        //         }
-        //         if inactive == cls.vars.len() {
-        //             write!(w, " (unused Bool)")?;
-        //         }
-        //         write!(w, " ) ")?;
-        //         cls.expr_to_smt2(&mut w, &(true, &PrdSet::new(), &PrdSet::new(), instance.preds()))?;
-        //         writeln!(w, "))")?;
-        //     }
-        //     println!("}}");
-        //     return Ok(RedInfo::new());
-        // }
-
         let res = instance.add_constraint_left(&constraints, &to_keep)?;
 
         println!("clauses_after {{");
@@ -221,38 +199,12 @@ impl RedStrat for ArgEqRed {
         }
         println!("}}");
 
-        // let res2 = instance.rm_args(to_keep)?;
-
-        // res += res2;
-
-        // println!("clauses {{");
-        // for (cls_idx, cls) in instance.clauses().index_iter() {
-        //     write!(w, "(assert (forall (")?;
-        //     let mut inactive = 0;
-        //     for var in &cls.vars {
-        //         if var.active {
-        //             write!(w, " (")?;
-        //             var.idx.default_write(&mut w)?;
-        //             write!(w, " {})", var.typ)?;
-        //         } else {
-        //             inactive += 1;
-        //         }
-        //     }
-        //     if inactive == cls.vars.len() {
-        //         write!(w, " (unused Bool)")?;
-        //     }
-        //     write!(w, " ) ")?;
-        //     cls.expr_to_smt2(&mut w, &(true, &PrdSet::new(), &PrdSet::new(), instance.preds()))?;
-        //     writeln!(w, "))")?;
-        // }
-        // println!("}}");
-
         Ok(res)
     }
 }
 
 /// Argument reduction context.
-pub struct ArgEqReductor {
+pub struct ArgCondEqReductor {
     /// Predicate arguments to keep.
     keep: PrdMap<VarSet>,
     instance: Arc<Instance>,
@@ -264,7 +216,7 @@ pub struct ArgEqReductor {
     fls_preds: PrdSet,
 }
 
-impl ArgEqReductor {
+impl ArgCondEqReductor {
     /// Constructor.
     pub fn new(pre_instance: &PreInstance) -> Res<Self> {
         let instance = Arc::new((**pre_instance).clone());
@@ -290,7 +242,7 @@ impl ArgEqReductor {
         let tru_preds = PrdSet::new();
         let fls_preds = PrdSet::new();
 
-        Ok(ArgEqReductor {
+        Ok(ArgCondEqReductor {
             keep,
             instance,
             imp_and_pos_clauses,
@@ -370,13 +322,6 @@ impl ArgEqReductor {
             println!()
         }
         println!("}}")
-    }
-
-    fn print_data(
-        &mut self,
-    ) -> Res<()> {
-        println!("{}", self.data.string_do(&(), |s| s.to_string())?);
-        Ok(())
     }
 
     // Adding positive samples by self.instance.cexs_to_data for each candidate in self.constraints
@@ -468,11 +413,103 @@ impl ArgEqReductor {
         Ok(())
     }
 
+    fn construct_guard(&self, pred: PrdIdx, var_map: &Vec<VarIdx>, coefs: &mut Vec<BigInt>) -> Term {
+        let mut add_terms = Vec::new();
+        add_terms.push(term::int(coefs[0].clone()));
+        for (i,&v) in var_map.iter().enumerate() {
+            let v_term = term::var(v, self.instance[pred].sig()[v].clone());
+            add_terms.push(term::cmul(coefs[i+1].clone(), v_term));
+        }
+        term::le(term::int_zero(), term::add(add_terms))
+    }
+
+    fn construct_equality(&self, pred: PrdIdx, var_map: &Vec<VarIdx>, coefs: &mut Vec<BigInt>) -> Term {
+        let mut add_terms = Vec::new();
+        let n = coefs.len();
+        if n == 0 {
+            term::tru()
+        } else {
+//            dbg!(&coefs);
+            add_terms.push(term::int(coefs[n-1].clone()));
+            for (i,&v) in var_map.iter().enumerate() {
+                if i != n-1 {
+                    let v_term = term::var(v, self.instance[pred].sig()[v].clone());
+                    add_terms.push(term::cmul(coefs[i+1].clone(), v_term));
+                }
+            }
+            term::eq(term::int_zero(), term::add(add_terms))
+        }
+    }
+
+    fn call_external_synthesizer(&self, pred: PrdIdx, var_map: &Vec<VarIdx>, vectors: &Vec<Vec<BigInt>>) -> Res<(Term,VarSet)> {
+        // Make input file
+        dbg!(vectors);
+        let input = "output.csv";
+        let input_path = Path::new(input);
+        let cmd = "cond_eq";
+        let mut file = File::create(&input_path)?;
+        writeln!(file, "{}", vectors.len())?;
+        for vec in vectors {
+            let csv = vec.iter().map(|x| x.to_string()).collect::<Vec<String>>().join(",");
+            writeln!(file, "{}", csv)?;
+        }
+
+        // Execute synthesizer
+        let _output = Command::new(cmd).arg(input).output()?;
+
+        // Read result
+        let output_path = input_path.with_extension("result");
+        let reader = BufReader::new(File::open(output_path).unwrap());
+        let mut r: Vec<Term> = Vec::new();
+        let mut iter = reader.lines().into_iter();
+        let num_cand : usize = iter.next().unwrap()?.parse().unwrap();
+        let mut removes = VarSet::new();
+        for _ in 1..=num_cand {
+            let var_idx : usize = iter.next().unwrap()?.parse().unwrap();
+            let var = var_map[var_idx];
+            removes.insert(var.into());
+            let num_conj : usize = iter.next().unwrap()?.parse().unwrap();
+            let mut guard_terms: Vec<Term> = Vec::new();
+            let mut and_terms = Vec::new();
+            for n in 1..=num_conj {
+                fn parse_csv(iter : &mut Lines<BufReader<File>>) -> Res<Vec<BigInt>> {
+                    Ok (iter.next().unwrap()?.split(',').map(|s| s.parse::<BigInt>().unwrap()).collect())
+                }
+                let mut equality_coefs = parse_csv(&mut iter)?;
+                let guard_term =
+                    if n != num_conj {
+                        let mut guard_coefs = parse_csv(&mut iter)?;
+                        let guard_term = self.construct_guard(pred, &var_map, &mut guard_coefs);
+                        guard_terms.push(guard_term.clone());
+                        guard_term
+                    } else {
+                        term::not(term::or(guard_terms.clone()))
+                    };
+                let equality_term = self.construct_equality(pred, &var_map, &mut equality_coefs);
+                let term = term::implies(guard_term, equality_term);
+                and_terms.push(term);
+            }
+            let term = term::and(and_terms);
+//            dbg!();
+//            let mut w = std::io::stdout();
+//            term.write(&mut w, |w, var| var.default_write(w))?;
+//            println!("");
+//            dbg!();
+            r.push(term);
+        }
+
+        let mut keeps = VarSet::new();
+        for (var, _) in self.instance[pred].sig().index_iter() {
+            if ! removes.contains(&var) {
+                keeps.insert(var);
+            }
+        }
+        Ok ((term::and(r), keeps))
+    }
+
     fn generate_constraints(&mut self) -> Res<()> {
         let mut raw_constraints = PrdMap::with_capacity(self.data.pos.len());
         for (pred, samples) in self.data.pos.index_iter() {
-            dbg!(pred);
-            dbg!(samples);
             if self.instance[pred].is_defined() {
                 raw_constraints.push(None);
                 continue;
@@ -482,31 +519,33 @@ impl ArgEqReductor {
                 continue;
             }
 
-            let mut iter = samples.iter();
-            if let Some(base) = iter.next() {
-                let mut var_map = Vec::with_capacity(base.len());
-                let mut base_vector = Vec::with_capacity(base.len());
-                for (var, val) in base.index_iter() {
+            if let Some(head) = samples.iter().next() {
+                let mut var_map = Vec::with_capacity(head.len());
+                for (var, val) in head.index_iter() {
                     if val.typ().is_int() {
                         var_map.push(var);
-                        base_vector.push(base[var].to_int()?.ok_or("base[var] is none")?);
                     }
                 }
 
-                let mut vectors = Vec::with_capacity(samples.len() - 1);
+                dbg!(samples);
+
+                let iter = samples.iter();
+                let mut vectors = Vec::with_capacity(samples.len());
                 for sample in iter {
                     let mut vector = Vec::with_capacity(var_map.len());
                     for i in 0..var_map.len() {
                         let vval = &sample[var_map[i]];
-                        debug_assert!(vval.typ().is_int());
-                        let vval = vval.to_int()?.ok_or("vval is none")?;
-                        let bval = base_vector[i].clone();
-                        vector.push(Rat::from(vval - bval));
+                        vector.push(vval.to_int()?.ok_or("vval is none")?);
                     }
                     vectors.push(vector);
                 }
-                let rank = gauss_jordan_elimination(&mut vectors);
-                raw_constraints.push(Some((var_map, base_vector, vectors, rank)));
+                let (term,keeps) =
+                    if samples.is_empty() {
+                        (term::fls(), VarSet::new())
+                    } else {
+                        self.call_external_synthesizer(pred, &var_map, &vectors)?
+                    };
+                raw_constraints.push(Some((term,keeps)));
             } else {
                 raw_constraints.push(None);
             }
@@ -514,7 +553,6 @@ impl ArgEqReductor {
 
         let mut constraints = PrdMap::new();
         let mut keeps = PrdMap::with_capacity(self.instance.preds().len());
-        // self.fls_preds.clear();
         for (pred, raw_constraint) in raw_constraints.index_iter() {
             let mut keep = VarSet::with_capacity(self.instance[pred].sig().len());
             if self.instance[pred].is_defined() {
@@ -524,89 +562,11 @@ impl ArgEqReductor {
                 for (var, _) in self.instance[pred].sig().index_iter() {
                     keep.insert(var);
                 }
-            } else if let Some((var_map, base_vector, vectors, rank)) = raw_constraint {
-                let rank = *rank;
-                let dim = var_map.len();
-                if dim <= rank {
-                    self.tru_preds.insert(pred);
-                    constraints.push(None);
-                    for (var, _) in self.instance[pred].sig().index_iter() {
-                        keep.insert(var);
-                    }
-                } else {
-                    let mut pivot_indices = Vec::with_capacity(rank);
-                    let mut non_pivot_indices = Vec::with_capacity(dim - rank);
-
-                    {
-                        let mut non_zero_ind = 0;
-                        for (var, _) in self.instance[pred].sig().index_iter() {
-                            keep.insert(var);
-                        }
-                        for param_ind in 0..rank {
-                            while vectors[param_ind][non_zero_ind].is_zero() {
-                                keep.remove(&var_map[non_zero_ind]);
-                                non_pivot_indices.push(non_zero_ind);
-                                non_zero_ind += 1;
-                            }
-                            pivot_indices.push(non_zero_ind);
-                            non_zero_ind += 1;
-                        }
-                        for i in non_zero_ind..dim {
-                            keep.remove(&var_map[i]);
-                            non_pivot_indices.push(i);
-                        }
-                    }
-
-
-                    let mut and_terms = Vec::with_capacity(dim - rank);
-                    for var_ind in non_pivot_indices.into_iter() {
-                        let mut const_part = Rat::from(base_vector[var_ind].clone());
-                        let mut coef_part = Vec::with_capacity(rank);
-                        for i in 0..rank {
-                            const_part -= vectors[i][var_ind].clone() * Rat::from(base_vector[pivot_indices[i]].clone());
-                            coef_part.push(vectors[i][var_ind].clone());
-                        }
-                        let mut denom_lcm = const_part.denom().clone();
-                        for i in 0..coef_part.len() {
-                            denom_lcm = denom_lcm.lcm(coef_part[i].denom());
-                        }
-                        const_part *= Rat::from(denom_lcm.clone());
-                        for i in 0..coef_part.len() {
-                            coef_part[i] *= Rat::from(denom_lcm.clone());
-                        }
-
-                        let const_part = const_part.to_integer();
-                        let coef_part: Vec<_> = coef_part.iter().map(|x| x.to_integer()).collect();
-
-                        let mut add_terms = Vec::with_capacity(1 + coef_part.len());
-                        if !const_part.is_zero() {
-                            add_terms.push(term::int(const_part));
-                        }
-                        for i in 0..coef_part.len() {
-                            if !coef_part[i].is_zero() {
-                                let var_ind = pivot_indices[i];
-                                let var = var_map[var_ind];
-                                let var_term = term::var(var, self.instance[pred].sig()[var].clone());
-                                let mul_term = term::mul(vec![var_term, term::int(coef_part[i].clone())]);
-                                add_terms.push(mul_term);
-                            }
-                        }
-                        let add_term = if add_terms.is_empty() { term::int_zero() } else { term::add(add_terms) };
-                        let lhs_term = {
-                            let var = var_map[var_ind];
-                            let var_term = term::var(var, self.instance[pred].sig()[var].clone());
-                            term::mul(vec![var_term, term::int(denom_lcm)])
-                        };
-                        let and_term = term::eq(lhs_term, add_term);
-                        and_terms.push(and_term);
-                    }
-                    let term = term::and(and_terms);
-                    println!("term: {}", term);
-                    constraints.push(Some(term));
-                }
+            } else if let Some((term,keep_var)) = raw_constraint {
+                constraints.push(Some(term.clone()));
+                keep = keep_var.clone();
             } else {
                 constraints.push(None);
-                // self.fls_preds.insert(pred);
             }
 
             keeps.push(keep);
@@ -618,36 +578,25 @@ impl ArgEqReductor {
         Ok(())
     }
 
-    fn print_sample_num(&self, n:i32) -> () {
-        for (pred, samples) in self.data.pos.index_iter() {
-            if self.instance[pred].is_defined() {
-                continue;
-            }
-            if self.tru_preds.contains(&pred) {
-                continue;
-            }
-
-            log_debug! { "|samples #{}|: {}", n, samples.len() };
-        }
+    fn print_data(
+        &mut self,
+    ) -> Res<()> {
+        println!("{}", self.data.string_do(&(), |s| s.to_string())?);
+        Ok(())
     }
 
     /// Runs itself on all clauses of an instance.
     pub fn run(mut self) -> Res<(PrdHMap<crate::preproc::PredExtension>, PrdHMap<VarSet>)> {
         loop {
-            self.print_sample_num(0);
+            let mut s = String::new();
+            let _ = std::io::stdin().read_line(&mut s);
+            println!("---------------------------------------------------------------------------------");
             if !self.handle_candidates()? {
                 break;
             }
-            log_debug! { "### 1" };
-            self.print_sample_num(1);
             self.generate_constraints()?;
-            log_debug! { "### 2" };
-            self.print_sample_num(2);
             self.print2();
-            log_debug! { "### 3" };
-            self.print_sample_num(3);
             self.print_data()?;
-            self.print_sample_num(4);
         }
 
         let mut constraints = PrdHMap::new();
@@ -661,57 +610,6 @@ impl ArgEqReductor {
             }
         }
 
-        // for clause in self.instance.clauses() {
-        //     if let Some((prd_idx, args)) = clause.rhs() {
-        //         if let Some(term) = &self.constraints[prd_idx] {
-
-        //             smt::reset(&mut self.solver, &self.instance)?;
-        //             let pred = &self.instance[prd_idx];
-        //             let sig: Vec<_> = pred
-        //                 .sig
-        //                 .index_iter()
-        //                 .map(|(var, typ)| (var, typ.get()))
-        //                 .collect();
-        //                 self.solver.define_fun(
-        //                 &pred.name,
-        //                 &sig,
-        //                 typ::bool().get(),
-        //                 &SmtTerm::new(&term),
-        //             )?;
-
-                    // let tru_preds = clause.lhs_preds().keys().cloned().collect();
-
-                    // self.solver.push(1)?;
-                    // clause.declare(&mut self.solver)?;
-                    // self.solver.assert_with(
-                    //     clause,
-                    //     &(
-                    //         false,
-                    //         &tru_preds,
-                    //         &PrdSet::new(),
-                    //         self.instance.preds(),
-                    //     ),
-                    // )?;
-
-                    // if self.solver.check_sat()? {
-                    //     let lhs = Vec::with_capacity(clause.lhs_len() + 1);
-                    //     for (prd_idx, argss) in clause.lhs_preds() {
-                    //         for args in argss {
-
-                    //         }
-                    //     }
-                    //     for term in clause.lhs_terms() {
-
-                    //     }
-                    //     self.pre_instance.push_new_clause(clause.vars.clone(), lhs, None, "arg_eq_red")?.ok_or("failed while adding a clause")?;
-                    // } else {
-                    //     // inductive invariant
-                    // }
-
-                    // self.solver.pop(1)?;
-        //         }
-        //     }
-        // }
 
         let mut to_keep = PrdHMap::new();
         for (pred, vars) in ::std::mem::replace(&mut self.keep, PrdMap::new()).into_index_iter() {

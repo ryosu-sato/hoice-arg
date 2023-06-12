@@ -25,11 +25,13 @@ pub mod one_rhs;
 pub mod strict_neg_clauses;
 pub mod unroll;
 pub mod arg_eq_red;
+pub mod arg_cond_eq_red;
+pub mod arg_eq_red_common;
 
 pub use self::{
     arg_red::ArgRed, bias_unroll::BiasedUnroll, cfg_red::CfgRed, fun_preds::FunPreds,
     one_lhs::OneLhs, one_rhs::OneRhs, strict_neg_clauses::StrictNeg, unroll::RUnroll,
-    arg_eq_red::ArgEqRed, 
+    arg_eq_red::ArgEqRed, arg_cond_eq_red::ArgCondEqRed,
 };
 pub use crate::instance::PreInstance;
 
@@ -286,6 +288,8 @@ pub struct Reductor<'a> {
     fun_preds: Option<FunPreds>,
     /// Optional constant propagation based variable elimination.
     arg_eq_red: Option<ArgEqRed>,
+    /// Optional conditional equality based variable elimination.
+    arg_cond_eq_red: Option<ArgCondEqRed>,
 }
 impl<'a> Reductor<'a> {
     /// Constructor.
@@ -343,6 +347,8 @@ impl<'a> Reductor<'a> {
 
         let arg_eq_red = some_new! { ArgEqRed if active and arg_eq_red };
 
+        let arg_cond_eq_red = some_new! { ArgCondEqRed if active and arg_cond_eq_red };
+
         Ok(Reductor {
             instance,
             simplify,
@@ -355,6 +361,7 @@ impl<'a> Reductor<'a> {
             strict_neg,
             fun_preds,
             arg_eq_red,
+            arg_cond_eq_red,
         })
     }
 
@@ -462,6 +469,8 @@ impl<'a> Reductor<'a> {
         }
 
         run! { arg_eq_red };
+
+        run! { arg_cond_eq_red };
 
         conf.check_timeout()?;
 

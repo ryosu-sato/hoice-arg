@@ -37,10 +37,10 @@ pub fn eval<E: Evaluator>(term: &Term, model: &E) -> Res<Val> {
 
 macro_rules! go {
     (up $e:expr) => {
-        return Ok(ZipDo::Upp { yielded: $e });
+        return Ok(ZipDo::Upp { yielded: $e })
     };
     (down $e:expr) => {
-        return Ok(ZipDo::Dwn { nu_term: $e });
+        return Ok(ZipDo::Dwn { nu_term: $e })
     };
 }
 
@@ -249,7 +249,7 @@ fn partial_op<'a>(
                         {
                             debug_assert_eq!(t.typ(), e.typ());
 
-                            go!(up val::none(t.typ()))
+                            go!(up val::none(t.typ()));
                         } else {
                             bail!("illegal application of `Ite`")
                         }

@@ -363,7 +363,7 @@ impl<'core> IceLearner<'core> {
             sorted:      {},\n  \
             skip_prelim: {},",
             simple, sorted, skip_prelim
-        }
+        };
 
         self.predicate_stats(skip_prelim)?;
 
@@ -382,7 +382,7 @@ impl<'core> IceLearner<'core> {
                 debug self =>
                 "{}: {} unclassified, {} classified",
                 self.instance[pred], _unc, _cla
-            }
+            };
 
             let data = profile!(
                 |self.core._profiler| wrap {

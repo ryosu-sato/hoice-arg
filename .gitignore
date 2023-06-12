@@ -3,3 +3,5 @@
 /target/
 /src/common/revision.rs
 /tmp/
+
+*~

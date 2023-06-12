@@ -524,6 +524,22 @@ make_conf! {
             |val| bool_of_match(val)
         }
 
+        arg_cond_eq_red, arg_cond_eq_red: bool {
+            help "arg_cond_eq_red",
+            long_help "\
+                arg_cond_eq_red\
+            ",
+            long "--arg_cond_eq_red",
+            takes_val,
+            val_name bool_format,
+            val_nb 1,
+            validator bool_validator,
+            default "on",
+            hidden,
+        } {
+            |val| bool_of_match(val)
+        }
+
         cfg_red, cfg_red: bool {
             help "(De)activates control flow graph reduction.",
             long_help "\

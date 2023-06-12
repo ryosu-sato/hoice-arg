@@ -40,7 +40,7 @@ pub fn new(
 /// # Invariants
 ///
 /// - if `! vars[var].active`, then `var` does not appear in `lhs` or `rhs`
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Clause {
     /// Variables of the clause.
     pub vars: VarInfos,

@@ -1110,7 +1110,7 @@ impl<'a> PreInstance<'a> {
         //     return self.force_true(pred);
         // }
 
-        let mut info = RedInfo::new();
+        let mut _info = RedInfo::new();
 
         log_debug! {
           "force pred left on {}...", conf.emph(& self.instance[pred].name)
@@ -1326,14 +1326,14 @@ impl<'a> PreInstance<'a> {
     pub fn add_constraint_left(
         &mut self,
         constraints: &PrdHMap<crate::preproc::PredExtension>,
-        to_keep: &PrdHMap<VarSet>, 
+        to_keep: &PrdHMap<VarSet>,
     ) -> Res<RedInfo> {
         self.check("before `extend_pred_left`")?;
 
         if !conf.preproc.arg_eq_red2 {
             let mut w = std::io::stdout();
             println!("clauses_after {{");
-            for (cls_idx, cls) in self.instance.clauses().index_iter() {
+            for (_cls_idx, cls) in self.instance.clauses().index_iter() {
                 write!(w, "(assert (forall (")?;
                 let mut inactive = 0;
                 for var in &cls.vars {
@@ -1347,7 +1347,7 @@ impl<'a> PreInstance<'a> {
                 }
                 if inactive == cls.vars.len() {
                     write!(w, " (unused Bool)")?;
-                } 
+                }
                 write!(w, " ) ")?;
                 cls.expr_to_smt2(&mut w, &(true, &PrdSet::new(), &PrdSet::new(), self.instance.preds()))?;
                 writeln!(w, "))")?;
@@ -1380,7 +1380,7 @@ impl<'a> PreInstance<'a> {
                         let mut clauses_to_simplify_left = self.force_pred_left_2(pred.idx, VarHMap::new(), tterm_set)?;
                         clauses_to_simplify_right.append(&mut clauses_to_simplify_left);
                         swap(&mut clauses_to_simplify_right, &mut self.clauses_to_simplify);
-                        self.simplify_clauses()?;
+                        let _ = self.simplify_clauses()?;
                         self.check("after `force_pred_right2 and force_pred_left2`")?;
                         self.force_pred(pred.idx, def)?;
                     } else {
@@ -1399,7 +1399,7 @@ impl<'a> PreInstance<'a> {
 
                         let mut tterm_set = TTermSet::with_capacities(1, 1);
                         tterm_set.insert_term(the_constraint);
-                        let mut args = var_to::terms::new(var_map);
+                        let args = var_to::terms::new(var_map);
                         tterm_set.insert_pred_app(new_prd_idx, args.clone());
                         let def = TTerms::conj(None, tterm_set.clone());
                         self.check("before `force_pred_right2 and force_pred_left2`")?;
@@ -1407,7 +1407,7 @@ impl<'a> PreInstance<'a> {
                         let mut clauses_to_simplify_left = self.force_pred_left_2(pred.idx, VarHMap::new(), tterm_set)?;
                         clauses_to_simplify_right.append(&mut clauses_to_simplify_left);
                         swap(&mut clauses_to_simplify_right, &mut self.clauses_to_simplify);
-                        self.simplify_clauses()?;
+                        let _ = self.simplify_clauses()?;
                         self.check("after `force_pred_right2 and force_pred_left2`")?;
                         self.force_pred(pred.idx, def)?;
                         // self.preds[pred.idx].set_def(def)?;
@@ -1425,7 +1425,7 @@ impl<'a> PreInstance<'a> {
                     let mut clauses_to_simplify_left = self.force_pred_left_2(pred.idx, VarHMap::new(), tterm_set)?;
                     clauses_to_simplify_right.append(&mut clauses_to_simplify_left);
                     swap(&mut clauses_to_simplify_right, &mut self.clauses_to_simplify);
-                    self.simplify_clauses()?;
+                    let _ = self.simplify_clauses()?;
                     self.check("after `force_pred_right2 and force_pred_left2`")?;
                     self.force_pred(pred.idx, def)?;
                 }
@@ -1448,7 +1448,7 @@ impl<'a> PreInstance<'a> {
             // println!("}}");
         }
 
-        let mut info = RedInfo::new(); // not implemented yet
+        let info = RedInfo::new(); // not implemented yet
 
         self.check("after `extend_pred_left`")?;
 
@@ -1767,7 +1767,7 @@ impl<'a> PreInstance<'a> {
     ) -> Res<Vec<ClsIdx>> {
         // self.check("before `force_pred_right_2`")?;
 
-        let mut info = RedInfo::new();
+        let mut _info = RedInfo::new();
 
         let quant = Quant::forall(qvars);
 
