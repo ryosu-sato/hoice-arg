@@ -40,72 +40,78 @@ impl RedStrat for ArgRed {
         let mut res = RedInfo::new();
         let keep = self.inner.run(instance);
         let mut w = std::io::stdout();
-        println!("clauses_before_RAF {{");
-        for (_, cls) in instance.clauses().index_iter() {
-            write!(w, "(assert (forall (")?;
-            let mut inactive = 0;
-            for var in &cls.vars {
-                if var.active {
-                    write!(w, " (")?;
-                    var.idx.default_write(&mut w)?;
-                    write!(w, " {})", var.typ)?;
-                } else {
-                    inactive += 1;
+        if cfg!(debug_assertions) {
+            println!("clauses_before_RAF {{");
+            for (_, cls) in instance.clauses().index_iter() {
+                write!(w, "(assert (forall (")?;
+                let mut inactive = 0;
+                for var in &cls.vars {
+                    if var.active {
+                        write!(w, " (")?;
+                        var.idx.default_write(&mut w)?;
+                        write!(w, " {})", var.typ)?;
+                    } else {
+                        inactive += 1;
+                    }
                 }
+                if inactive == cls.vars.len() {
+                    write!(w, " (unused Bool)")?;
+                }
+                write!(w, " ) ")?;
+                cls.expr_to_smt2(&mut w, &(true, &PrdSet::new(), &PrdSet::new(), instance.preds()))?;
+                writeln!(w, "))")?;
             }
-            if inactive == cls.vars.len() {
-                write!(w, " (unused Bool)")?;
-            } 
-            write!(w, " ) ")?;
-            cls.expr_to_smt2(&mut w, &(true, &PrdSet::new(), &PrdSet::new(), instance.preds()))?;
-            writeln!(w, "))")?;
+            println!("}}");
         }
-        println!("}}");
         res += instance.rm_args(keep)?;
-        println!("clauses_before_FAR {{");
-        for (_, cls) in instance.clauses().index_iter() {
-            write!(w, "(assert (forall (")?;
-            let mut inactive = 0;
-            for var in &cls.vars {
-                if var.active {
-                    write!(w, " (")?;
-                    var.idx.default_write(&mut w)?;
-                    write!(w, " {})", var.typ)?;
-                } else {
-                    inactive += 1;
+        if cfg!(debug_assertions) {
+            println!("clauses_before_FAR {{");
+            for (_, cls) in instance.clauses().index_iter() {
+                write!(w, "(assert (forall (")?;
+                let mut inactive = 0;
+                for var in &cls.vars {
+                    if var.active {
+                        write!(w, " (")?;
+                        var.idx.default_write(&mut w)?;
+                        write!(w, " {})", var.typ)?;
+                    } else {
+                        inactive += 1;
+                    }
                 }
+                if inactive == cls.vars.len() {
+                    write!(w, " (unused Bool)")?;
+                }
+                write!(w, " ) ")?;
+                cls.expr_to_smt2(&mut w, &(true, &PrdSet::new(), &PrdSet::new(), instance.preds()))?;
+                writeln!(w, "))")?;
             }
-            if inactive == cls.vars.len() {
-                write!(w, " (unused Bool)")?;
-            } 
-            write!(w, " ) ")?;
-            cls.expr_to_smt2(&mut w, &(true, &PrdSet::new(), &PrdSet::new(), instance.preds()))?;
-            writeln!(w, "))")?;
+            println!("}}");
         }
-        println!("}}");
         let keep = self.inner2.run(instance);
         res += instance.rm_args(keep)?;
-        println!("clauses_after_FAR {{");
-        for (_, cls) in instance.clauses().index_iter() {
-            write!(w, "(assert (forall (")?;
-            let mut inactive = 0;
-            for var in &cls.vars {
-                if var.active {
-                    write!(w, " (")?;
-                    var.idx.default_write(&mut w)?;
-                    write!(w, " {})", var.typ)?;
-                } else {
-                    inactive += 1;
+        if cfg!(debug_assertions) {
+            println!("clauses_after_FAR {{");
+            for (_, cls) in instance.clauses().index_iter() {
+                write!(w, "(assert (forall (")?;
+                let mut inactive = 0;
+                for var in &cls.vars {
+                    if var.active {
+                        write!(w, " (")?;
+                        var.idx.default_write(&mut w)?;
+                        write!(w, " {})", var.typ)?;
+                    } else {
+                        inactive += 1;
+                    }
                 }
+                if inactive == cls.vars.len() {
+                    write!(w, " (unused Bool)")?;
+                }
+                write!(w, " ) ")?;
+                cls.expr_to_smt2(&mut w, &(true, &PrdSet::new(), &PrdSet::new(), instance.preds()))?;
+                writeln!(w, "))")?;
             }
-            if inactive == cls.vars.len() {
-                write!(w, " (unused Bool)")?;
-            } 
-            write!(w, " ) ")?;
-            cls.expr_to_smt2(&mut w, &(true, &PrdSet::new(), &PrdSet::new(), instance.preds()))?;
-            writeln!(w, "))")?;
+            println!("}}");
         }
-        println!("}}");
         Ok(res)
     }
 }
@@ -431,7 +437,7 @@ impl ArgReductor2 {
             if *rhs_map
                 .get(&cvar)
                 .expect("inconsistent ArgReductor2 state")
-                > 1 
+                > 1
             {
                 return true;
             }

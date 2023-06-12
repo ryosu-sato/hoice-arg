@@ -32,27 +32,29 @@ impl RedStrat for ArgEqRed {
             bail!("");
         }
 
-        println!("clauses {{");
-        for (_cls_idx, cls) in instance.clauses().index_iter() {
-            write!(w, "(assert (forall (")?;
-            let mut inactive = 0;
-            for var in &cls.vars {
-                if var.active {
-                    write!(w, " (")?;
-                    var.idx.default_write(&mut w)?;
-                    write!(w, " {})", var.typ)?;
-                } else {
-                    inactive += 1;
-                }
-            }
-            if inactive == cls.vars.len() {
-                write!(w, " (unused Bool)")?;
-            }
-            write!(w, " ) ")?;
-            cls.expr_to_smt2(&mut w, &(true, &PrdSet::new(), &PrdSet::new(), instance.preds()))?;
-            writeln!(w, "))")?;
+        if cfg!(debug_assertions) {
+          println!("clauses {{");
+          for (_cls_idx, cls) in instance.clauses().index_iter() {
+              write!(w, "(assert (forall (")?;
+              let mut inactive = 0;
+              for var in &cls.vars {
+                  if var.active {
+                      write!(w, " (")?;
+                      var.idx.default_write(&mut w)?;
+                      write!(w, " {})", var.typ)?;
+                  } else {
+                      inactive += 1;
+                  }
+              }
+              if inactive == cls.vars.len() {
+                  write!(w, " (unused Bool)")?;
+              }
+              write!(w, " ) ")?;
+              cls.expr_to_smt2(&mut w, &(true, &PrdSet::new(), &PrdSet::new(), instance.preds()))?;
+              writeln!(w, "))")?;
+          }
+            println!("}}");
         }
-        println!("}}");
 
         let reductor = ArgEqReductor::new(instance)?;
         let (constraints, to_keep) = reductor.run()?;
@@ -93,69 +95,69 @@ impl RedStrat for ArgEqRed {
             bail!("");
         }
 
-        println!("to_keep {{");
-        for (&pred, vars) in to_keep.iter() {
-            if instance[pred].is_defined() {
-                continue;
-            }
-            print!("  {}:", instance[pred]);
-            for var in vars {
-                print!(" {},", var.default_str())
-            }
-            println!();
-        }
-        println!("}}");
-        println!("constraints #1 {{");
-        for (&pred, term) in constraints.iter() {
-            print!("  {}: ", instance[pred]);
-            if instance[pred].is_defined() {
-                println!("defined {}", pred);
-                continue;
-            }
-            let mut w = std::io::stdout();
-            let (term, _) = term;
-            let term = term.iter().next().unwrap();
-            term.write(&mut w, |w, var| var.default_write(w))?;
-            println!();
-        }
-        println!("}}");
-
-        println!("clauses_before {{");
-        for (_cls_idx, cls) in instance.clauses().index_iter() {
-            write!(w, "(assert (forall (")?;
-            let mut inactive = 0;
-            for var in &cls.vars {
-                if var.active {
-                    write!(w, " (")?;
-                    var.idx.default_write(&mut w)?;
-                    write!(w, " {})", var.typ)?;
-                } else {
-                    inactive += 1;
+        if cfg!(debug_assertions) {
+            println!("to_keep {{");
+            for (&pred, vars) in to_keep.iter() {
+                if instance[pred].is_defined() {
+                    continue;
                 }
+                print!("  {}:", instance[pred]);
+                for var in vars {
+                    print!(" {},", var.default_str())
+                }
+                println!();
             }
-            if inactive == cls.vars.len() {
-                write!(w, " (unused Bool)")?;
-            }
-            write!(w, " ) ")?;
-            cls.expr_to_smt2(&mut w, &(true, &PrdSet::new(), &PrdSet::new(), instance.preds()))?;
-            writeln!(w, "))")?;
-        }
-        println!("}}");
-
-        println!("preds_before {{");
-        for pred in instance.preds() {
-            print!("  {}: ", pred.name);
-            if pred.is_defined() {
-                println!("defined ");
-                continue;
-            }
-            let mut w = std::io::stdout();
-            if let Some(term) = pred.strength() {
+            println!("}}");
+            println!("constraints #1 {{");
+            for (&pred, term) in constraints.iter() {
+                print!("  {}: ", instance[pred]);
+                if instance[pred].is_defined() {
+                    println!("defined {}", pred);
+                    continue;
+                }
+                let (term, _) = term;
+                let term = term.iter().next().unwrap();
                 term.write(&mut w, |w, var| var.default_write(w))?;
+                println!();
             }
-            println!();
+            println!("}}");
+
+            println!("clauses_before {{");
+            for (_cls_idx, cls) in instance.clauses().index_iter() {
+                write!(w, "(assert (forall (")?;
+                let mut inactive = 0;
+                for var in &cls.vars {
+                    if var.active {
+                        write!(w, " (")?;
+                        var.idx.default_write(&mut w)?;
+                        write!(w, " {})", var.typ)?;
+                    } else {
+                        inactive += 1;
+                    }
+                }
+                if inactive == cls.vars.len() {
+                    write!(w, " (unused Bool)")?;
+                }
+                write!(w, " ) ")?;
+                cls.expr_to_smt2(&mut w, &(true, &PrdSet::new(), &PrdSet::new(), instance.preds()))?;
+                writeln!(w, "))")?;
+            }
+            println!("}}");
+
+            println!("preds_before {{");
+            for pred in instance.preds() {
+                print!("  {}: ", pred.name);
+                if pred.is_defined() {
+                    println!("defined ");
+                    continue;
+                }
+                if let Some(term) = pred.strength() {
+                    term.write(&mut w, |w, var| var.default_write(w))?;
+                }
+                println!();
+            }
+            println!("}}");
         }
-        println!("}}");
 
         // if !conf.preproc.arg_eq_red2 {
         //     let mut w = std::io::stdout();
@@ -185,41 +187,43 @@ impl RedStrat for ArgEqRed {
 
         let res = instance.add_constraint_left(&constraints, &to_keep)?;
 
-        println!("clauses_after {{");
-        for (_cls_idx, cls) in instance.clauses().index_iter() {
-            write!(w, "(assert (forall (")?;
-            let mut inactive = 0;
-            for var in &cls.vars {
-                if var.active {
-                    write!(w, " (")?;
-                    var.idx.default_write(&mut w)?;
-                    write!(w, " {})", var.typ)?;
-                } else {
-                    inactive += 1;
+        if cfg!(debug_assertions) {
+            println!("clauses_after {{");
+            for (_cls_idx, cls) in instance.clauses().index_iter() {
+                write!(w, "(assert (forall (")?;
+                let mut inactive = 0;
+                for var in &cls.vars {
+                    if var.active {
+                        write!(w, " (")?;
+                        var.idx.default_write(&mut w)?;
+                        write!(w, " {})", var.typ)?;
+                    } else {
+                        inactive += 1;
+                    }
                 }
+                if inactive == cls.vars.len() {
+                    write!(w, " (unused Bool)")?;
+                }
+                write!(w, " ) ")?;
+                cls.expr_to_smt2(&mut w, &(true, &PrdSet::new(), &PrdSet::new(), instance.preds()))?;
+                writeln!(w, "))")?;
             }
-            if inactive == cls.vars.len() {
-                write!(w, " (unused Bool)")?;
+            println!("}}");
+            println!("preds_after {{");
+            for pred in instance.preds() {
+                print!("  {}: ", pred.name);
+                if pred.is_defined() {
+                    println!("defined ");
+                    continue;
+                }
+                let mut w = std::io::stdout();
+                if let Some(term) = pred.strength() {
+                    term.write(&mut w, |w, var| var.default_write(w))?;
+                }
+                println!();
             }
-            write!(w, " ) ")?;
-            cls.expr_to_smt2(&mut w, &(true, &PrdSet::new(), &PrdSet::new(), instance.preds()))?;
-            writeln!(w, "))")?;
+            println!("}}");
         }
-        println!("}}");
-        println!("preds_after {{");
-        for pred in instance.preds() {
-            print!("  {}: ", pred.name);
-            if pred.is_defined() {
-                println!("defined ");
-                continue;
-            }
-            let mut w = std::io::stdout();
-            if let Some(term) = pred.strength() {
-                term.write(&mut w, |w, var| var.default_write(w))?;
-            }
-            println!();
-        }
-        println!("}}");
 
         // let res2 = instance.rm_args(to_keep)?;
 

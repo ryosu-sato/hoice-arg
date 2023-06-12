@@ -1364,11 +1364,11 @@ impl<'a> PreInstance<'a> {
             if let Some(keep) = to_keep.get(&pred.idx) {
                 if keep.len() == pred.sig().len() {
                     // tru_preds
-                    println!("add_constraint_left: keep.len() == pred.sig().len()");
+//                    println!("add_constraint_left: keep.len() == pred.sig().len()");
                     // do nothing
                 } else if let Some(constraint) = constraints.get(&pred.idx) {
                     if keep.len() == 0 {
-                        println!("add_constraint_left: pred is determined");
+//                        println!("add_constraint_left: pred is determined");
                         let the_constraint = constraint.0.iter().next().ok_or("constraint.0 must have only one element")?.clone();
                         let mut tterm_set = TTermSet::with_capacities(1, 0);
                         tterm_set.insert_term(the_constraint.clone());
@@ -1384,7 +1384,7 @@ impl<'a> PreInstance<'a> {
                         self.check("after `force_pred_right2 and force_pred_left2`")?;
                         self.force_pred(pred.idx, def)?;
                     } else {
-                        println!("add_constraint_left: add pred");
+//                        println!("add_constraint_left: add pred");
                         let name = "aer".to_string() + &i.to_string();
                         i += 1;
                         let old_sig = pred.sig();
@@ -1414,7 +1414,7 @@ impl<'a> PreInstance<'a> {
                     }
                 } else {
                     // fls_preds
-                    println!("add_constraint_left: fls_pred");
+//                    println!("add_constraint_left: fls_pred");
                     let mut tterm_set = TTermSet::with_capacities(1, 0);
                     tterm_set.insert_term(term::fls());
                     let mut negated_tterm_set = TTermSet::with_capacities(1, 0);

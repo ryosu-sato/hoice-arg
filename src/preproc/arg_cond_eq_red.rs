@@ -6,6 +6,7 @@ use std::fs::File;
 use std::io::{BufReader, Lines, prelude::*};
 use std::path::Path;
 use std::process::Command;
+use std::time;
 
 use crate::{
     common::{
@@ -29,6 +30,7 @@ impl RedStrat for ArgCondEqRed {
     }
 
     fn apply(&mut self, instance: &mut PreInstance) -> Res<RedInfo> {
+        let now = time::Instant::now();
         let mut w = std::io::stdout();
 
         if conf.preproc.arg_eq_red_count_clause {
@@ -36,168 +38,119 @@ impl RedStrat for ArgCondEqRed {
             bail!("");
         }
 
-        println!("clauses {{");
-        for (_cls_idx, cls) in instance.clauses().index_iter() {
-            write!(w, "(assert (forall (")?;
-            let mut inactive = 0;
-            for var in &cls.vars {
-                if var.active {
-                    write!(w, " (")?;
-                    var.idx.default_write(&mut w)?;
-                    write!(w, " {})", var.typ)?;
-                } else {
-                    inactive += 1;
-                }
-            }
-            if inactive == cls.vars.len() {
-                write!(w, " (unused Bool)")?;
-            }
-            write!(w, " ) ")?;
-            cls.expr_to_smt2(&mut w, &(true, &PrdSet::new(), &PrdSet::new(), instance.preds()))?;
-            writeln!(w, "))")?;
-        }
-        println!("}}");
-
         let reductor = ArgCondEqReductor::new(instance)?;
         let (constraints, to_keep) = reductor.run()?;
 
-        if conf.preproc.arg_eq_red_check {
-            let mut red = false;
+        if cfg!(debug_assertions) {
+            println!("to_keep {{");
             for (&pred, vars) in to_keep.iter() {
                 if instance[pred].is_defined() {
                     continue;
                 }
-                let red_num = instance[pred].sig.len() - vars.len();
-                if red_num > 0 {
-                    red = true;
-                    break;
+                print!("  {}:", instance[pred]);
+                for var in vars {
+                    print!(" {},", var.default_str())
                 }
+                println!();
             }
-            if red {
-                eprintln!("reduced");
-            } else {
-                eprintln!("kept");
-            }
-            bail!("");
-        }
-
-        if conf.preproc.arg_eq_red_count {
-            let mut before = 0;
-            let mut after = 0;
-            for (&pred, vars) in to_keep.iter() {
+            println!("}}");
+            println!("constraints #1 {{");
+            for (&pred, term) in constraints.iter() {
+                print!("  {}: ", instance[pred]);
                 if instance[pred].is_defined() {
+                    println!("defined {}", pred);
                     continue;
                 }
-                if instance[pred].sig.len() > before {
-                    before = instance[pred].sig.len();
-                    after = vars.len();
-                }
-            }
-            eprintln!("{} {}", before, after);
-            bail!("");
-        }
-
-        println!("to_keep {{");
-        for (&pred, vars) in to_keep.iter() {
-            if instance[pred].is_defined() {
-                continue;
-            }
-            print!("  {}:", instance[pred]);
-            for var in vars {
-                print!(" {},", var.default_str())
-            }
-            println!();
-        }
-        println!("}}");
-        println!("constraints #1 {{");
-        for (&pred, term) in constraints.iter() {
-            print!("  {}: ", instance[pred]);
-            if instance[pred].is_defined() {
-                println!("defined {}", pred);
-                continue;
-            }
-            let mut w = std::io::stdout();
-            let (term, _) = term;
-            let term = term.iter().next().unwrap();
-            term.write(&mut w, |w, var| var.default_write(w))?;
-            println!();
-        }
-        println!("}}");
-
-        println!("clauses_before {{");
-        for (_cls_idx, cls) in instance.clauses().index_iter() {
-            write!(w, "(assert (forall (")?;
-            let mut inactive = 0;
-            for var in &cls.vars {
-                if var.active {
-                    write!(w, " (")?;
-                    var.idx.default_write(&mut w)?;
-                    write!(w, " {})", var.typ)?;
-                } else {
-                    inactive += 1;
-                }
-            }
-            if inactive == cls.vars.len() {
-                write!(w, " (unused Bool)")?;
-            }
-            write!(w, " ) ")?;
-            cls.expr_to_smt2(&mut w, &(true, &PrdSet::new(), &PrdSet::new(), instance.preds()))?;
-            writeln!(w, "))")?;
-        }
-        println!("}}");
-
-        println!("preds_before {{");
-        for pred in instance.preds() {
-            print!("  {}: ", pred.name);
-            if pred.is_defined() {
-                println!("defined ");
-                continue;
-            }
-            let mut w = std::io::stdout();
-            if let Some(term) = pred.strength() {
+                let mut w = std::io::stdout();
+                let (term, _) = term;
+                let term = term.iter().next().unwrap();
                 term.write(&mut w, |w, var| var.default_write(w))?;
+                println!();
             }
-            println!();
+            println!("}}");
+
+            println!("clauses_before {{");
+            for (_cls_idx, cls) in instance.clauses().index_iter() {
+                write!(w, "(assert (forall (")?;
+                let mut inactive = 0;
+                for var in &cls.vars {
+                    if var.active {
+                        write!(w, " (")?;
+                        var.idx.default_write(&mut w)?;
+                        write!(w, " {})", var.typ)?;
+                    } else {
+                        inactive += 1;
+                    }
+                }
+                if inactive == cls.vars.len() {
+                    write!(w, " (unused Bool)")?;
+                }
+                write!(w, " ) ")?;
+                cls.expr_to_smt2(&mut w, &(true, &PrdSet::new(), &PrdSet::new(), instance.preds()))?;
+                writeln!(w, "))")?;
+            }
+            println!("}}");
+
+            println!("preds_before {{");
+            for pred in instance.preds() {
+                print!("  {}: ", pred.name);
+                if pred.is_defined() {
+                    println!("defined ");
+                    continue;
+                }
+                let mut w = std::io::stdout();
+                if let Some(term) = pred.strength() {
+                    term.write(&mut w, |w, var| var.default_write(w))?;
+                }
+                println!();
+            }
+            println!("}}");
         }
-        println!("}}");
 
         let res = instance.add_constraint_left(&constraints, &to_keep)?;
 
-        println!("clauses_after {{");
-        for (_cls_idx, cls) in instance.clauses().index_iter() {
-            write!(w, "(assert (forall (")?;
-            let mut inactive = 0;
-            for var in &cls.vars {
-                if var.active {
-                    write!(w, " (")?;
-                    var.idx.default_write(&mut w)?;
-                    write!(w, " {})", var.typ)?;
-                } else {
-                    inactive += 1;
+        if cfg!(debug_assertions) {
+            println!("clauses_after {{");
+            for (_cls_idx, cls) in instance.clauses().index_iter() {
+                write!(w, "(assert (forall (")?;
+                let mut inactive = 0;
+                for var in &cls.vars {
+                    if var.active {
+                        write!(w, " (")?;
+                        var.idx.default_write(&mut w)?;
+                        write!(w, " {})", var.typ)?;
+                    } else {
+                        inactive += 1;
+                    }
                 }
+                if inactive == cls.vars.len() {
+                    write!(w, " (unused Bool)")?;
+                }
+                write!(w, " ) ")?;
+                cls.expr_to_smt2(&mut w, &(true, &PrdSet::new(), &PrdSet::new(), instance.preds()))?;
+                writeln!(w, "))")?;
             }
-            if inactive == cls.vars.len() {
-                write!(w, " (unused Bool)")?;
+            println!("}}");
+            println!("preds_after {{");
+            for pred in instance.preds() {
+                print!("  {}: ", pred.name);
+                if pred.is_defined() {
+                    println!("defined ");
+                    continue;
+                }
+                if let Some(term) = pred.strength() {
+                    term.write(&mut w, |w, var| var.default_write(w))?;
+                }
+                println!();
             }
-            write!(w, " ) ")?;
-            cls.expr_to_smt2(&mut w, &(true, &PrdSet::new(), &PrdSet::new(), instance.preds()))?;
-            writeln!(w, "))")?;
+            println!("}}");
         }
-        println!("}}");
-        println!("preds_after {{");
-        for pred in instance.preds() {
-            print!("  {}: ", pred.name);
-            if pred.is_defined() {
-                println!("defined ");
-                continue;
-            }
-            let mut w = std::io::stdout();
-            if let Some(term) = pred.strength() {
-                term.write(&mut w, |w, var| var.default_write(w))?;
-            }
-            println!();
-        }
-        println!("}}");
+
+        let elapsed = now.elapsed();
+        let file = conf.in_file().unwrap();
+        let stats_path = Path::new(file).with_extension("stat");
+        let mut file = File::create(&stats_path)?;
+        writeln!(file, "time:{:?}", elapsed)?;
 
         Ok(res)
     }
@@ -335,7 +288,7 @@ impl ArgCondEqReductor {
             } else if self.tru_preds.contains(&pred) {
                 // skip
             } else if let Some(term) = cand {
-                println!("cand: {}", term);
+//                println!("cand: {}", term);
                 let pred = &self.instance[pred];
                 let sig: Vec<_> = pred
                     .sig
@@ -434,7 +387,7 @@ impl ArgCondEqReductor {
             for (i,&v) in var_map.iter().enumerate() {
                 if i != n-1 {
                     let v_term = term::var(v, self.instance[pred].sig()[v].clone());
-                    add_terms.push(term::cmul(coefs[i+1].clone(), v_term));
+                    add_terms.push(term::cmul(coefs[i].clone(), v_term));
                 }
             }
             term::eq(term::int_zero(), term::add(add_terms))
@@ -443,7 +396,7 @@ impl ArgCondEqReductor {
 
     fn call_external_synthesizer(&self, pred: PrdIdx, var_map: &Vec<VarIdx>, vectors: &Vec<Vec<BigInt>>) -> Res<(Term,VarSet)> {
         // Make input file
-        dbg!(vectors);
+//        dbg!(vectors);
         let input = "output.csv";
         let input_path = Path::new(input);
         let cmd = "cond_eq";
@@ -467,6 +420,7 @@ impl ArgCondEqReductor {
         for _ in 1..=num_cand {
             let var_idx : usize = iter.next().unwrap()?.parse().unwrap();
             let var = var_map[var_idx];
+//            dbg!(var);
             removes.insert(var.into());
             let num_conj : usize = iter.next().unwrap()?.parse().unwrap();
             let mut guard_terms: Vec<Term> = Vec::new();
@@ -476,6 +430,7 @@ impl ArgCondEqReductor {
                     Ok (iter.next().unwrap()?.split(',').map(|s| s.parse::<BigInt>().unwrap()).collect())
                 }
                 let mut equality_coefs = parse_csv(&mut iter)?;
+//                dbg!(&equality_coefs);
                 let guard_term =
                     if n != num_conj {
                         let mut guard_coefs = parse_csv(&mut iter)?;
@@ -486,15 +441,11 @@ impl ArgCondEqReductor {
                         term::not(term::or(guard_terms.clone()))
                     };
                 let equality_term = self.construct_equality(pred, &var_map, &mut equality_coefs);
+//                dbg!(&equality_term);
                 let term = term::implies(guard_term, equality_term);
                 and_terms.push(term);
             }
             let term = term::and(and_terms);
-//            dbg!();
-//            let mut w = std::io::stdout();
-//            term.write(&mut w, |w, var| var.default_write(w))?;
-//            println!("");
-//            dbg!();
             r.push(term);
         }
 
@@ -527,7 +478,7 @@ impl ArgCondEqReductor {
                     }
                 }
 
-                dbg!(samples);
+//                dbg!(samples);
 
                 let iter = samples.iter();
                 let mut vectors = Vec::with_capacity(samples.len());
@@ -588,15 +539,19 @@ impl ArgCondEqReductor {
     /// Runs itself on all clauses of an instance.
     pub fn run(mut self) -> Res<(PrdHMap<crate::preproc::PredExtension>, PrdHMap<VarSet>)> {
         loop {
+/*
             let mut s = String::new();
             let _ = std::io::stdin().read_line(&mut s);
             println!("---------------------------------------------------------------------------------");
+*/
             if !self.handle_candidates()? {
                 break;
             }
             self.generate_constraints()?;
-            self.print2();
-            self.print_data()?;
+            if cfg!(debug_assertions) {
+                self.print2();
+                self.print_data()?;
+            }
         }
 
         let mut constraints = PrdHMap::new();
@@ -621,7 +576,9 @@ impl ArgCondEqReductor {
 
         // let tru_preds = ::std::mem::replace(&mut self.tru_preds, PrdSet::new());
 
-        self.print(&constraints, &to_keep, &self.instance.clone());
+        if cfg!(debug_assertions) {
+            self.print(&constraints, &to_keep, &self.instance.clone());
+        }
 
         Ok((constraints, to_keep))
     }
