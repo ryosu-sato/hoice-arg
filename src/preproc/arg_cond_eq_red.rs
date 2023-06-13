@@ -1,12 +1,12 @@
 //!
 
 use num::BigInt;
-use std::vec;
 use std::fs::File;
-use std::io::{BufReader, Lines, prelude::*};
+use std::io::{prelude::*, BufReader, Lines};
 use std::path::Path;
 use std::process::Command;
 use std::time;
+use std::vec;
 
 use crate::{
     common::{
@@ -16,7 +16,6 @@ use crate::{
     data::Data,
     preproc::{PreInstance, RedStrat},
 };
-
 
 pub struct ArgCondEqRed {}
 
@@ -86,7 +85,10 @@ impl RedStrat for ArgCondEqRed {
                     write!(w, " (unused Bool)")?;
                 }
                 write!(w, " ) ")?;
-                cls.expr_to_smt2(&mut w, &(true, &PrdSet::new(), &PrdSet::new(), instance.preds()))?;
+                cls.expr_to_smt2(
+                    &mut w,
+                    &(true, &PrdSet::new(), &PrdSet::new(), instance.preds()),
+                )?;
                 writeln!(w, "))")?;
             }
             println!("}}");
@@ -127,7 +129,10 @@ impl RedStrat for ArgCondEqRed {
                     write!(w, " (unused Bool)")?;
                 }
                 write!(w, " ) ")?;
-                cls.expr_to_smt2(&mut w, &(true, &PrdSet::new(), &PrdSet::new(), instance.preds()))?;
+                cls.expr_to_smt2(
+                    &mut w,
+                    &(true, &PrdSet::new(), &PrdSet::new(), instance.preds()),
+                )?;
                 writeln!(w, "))")?;
             }
             println!("}}");
@@ -146,11 +151,24 @@ impl RedStrat for ArgCondEqRed {
             println!("}}");
         }
 
+        // Statistics
         let elapsed = now.elapsed();
+
+        let mut before = 0;
+        let mut after = 0;
+        for (&pred, vars) in to_keep.iter() {
+            if instance[pred].is_defined() {
+                continue;
+            }
+            before += instance[pred].sig.len();
+            after += vars.len();
+        }
+
         let file = conf.in_file().unwrap();
-        let stats_path = Path::new(file).with_extension("stat");
-        let mut file = File::create(&stats_path)?;
-        writeln!(file, "time:{:?}", elapsed)?;
+        let mut file = File::create(Path::new(file).with_extension("stat"))?;
+        writeln!(file, "{:?}", elapsed)?;
+        writeln!(file, "{}", before)?;
+        writeln!(file, "{}", after)?;
 
         Ok(res)
     }
@@ -234,15 +252,17 @@ impl ArgCondEqReductor {
             }
             print!("  {}: ", instance[pred]);
             let mut w = std::io::stdout();
-            let _ = terms.iter().next().unwrap().write(&mut w, |w, var| var.default_write(w));
+            let _ = terms
+                .iter()
+                .next()
+                .unwrap()
+                .write(&mut w, |w, var| var.default_write(w));
             println!()
         }
         println!("}}")
     }
 
-    fn print2(
-        &mut self,
-    ) {
+    fn print2(&mut self) {
         println!("to_keep {{");
         for (pred, vars) in self.keep.index_iter() {
             if self.instance[pred].is_defined() {
@@ -288,7 +308,7 @@ impl ArgCondEqReductor {
             } else if self.tru_preds.contains(&pred) {
                 // skip
             } else if let Some(term) = cand {
-//                println!("cand: {}", term);
+                //                println!("cand: {}", term);
                 let pred = &self.instance[pred];
                 let sig: Vec<_> = pred
                     .sig
@@ -337,12 +357,12 @@ impl ArgCondEqReductor {
             &self.fls_preds,
             self.instance.preds(),
         );
-//        dbg!(info);
-//        dbg!(clause);
-//        let mut w = std::io::stdout();
-//        let _ = clause.expr_to_smt2(&mut w, &info)?;
-//        println!("");
-//        dbg!();
+        //        dbg!(info);
+        //        dbg!(clause);
+        //        let mut w = std::io::stdout();
+        //        let _ = clause.expr_to_smt2(&mut w, &info)?;
+        //        println!("");
+        //        dbg!();
 
         self.solver.assert_with(clause, &info)?;
 
@@ -350,11 +370,7 @@ impl ArgCondEqReductor {
         if sat {
             let model = self.solver.get_model()?;
             let model = Parser.fix_model(model)?;
-            let cex = Cex::of_model(
-                clause.vars(),
-                model,
-                true,
-            )?;
+            let cex = Cex::of_model(clause.vars(), model, true)?;
             let bias = Bias::Non;
             let cexs = vec![(cex, bias)];
             let prev = map.insert(cls_idx, cexs);
@@ -366,26 +382,36 @@ impl ArgCondEqReductor {
         Ok(())
     }
 
-    fn construct_guard(&self, pred: PrdIdx, var_map: &Vec<VarIdx>, coefs: &mut Vec<BigInt>) -> Term {
+    fn construct_guard(
+        &self,
+        pred: PrdIdx,
+        var_map: &Vec<VarIdx>,
+        coefs: &mut Vec<BigInt>,
+    ) -> Term {
         let mut add_terms = Vec::new();
         add_terms.push(term::int(coefs[0].clone()));
-        for (i,&v) in var_map.iter().enumerate() {
+        for (i, &v) in var_map.iter().enumerate() {
             let v_term = term::var(v, self.instance[pred].sig()[v].clone());
-            add_terms.push(term::cmul(coefs[i+1].clone(), v_term));
+            add_terms.push(term::cmul(coefs[i + 1].clone(), v_term));
         }
         term::le(term::int_zero(), term::add(add_terms))
     }
 
-    fn construct_equality(&self, pred: PrdIdx, var_map: &Vec<VarIdx>, coefs: &mut Vec<BigInt>) -> Term {
+    fn construct_equality(
+        &self,
+        pred: PrdIdx,
+        var_map: &Vec<VarIdx>,
+        coefs: &mut Vec<BigInt>,
+    ) -> Term {
         let mut add_terms = Vec::new();
         let n = coefs.len();
         if n == 0 {
             term::tru()
         } else {
-//            dbg!(&coefs);
-            add_terms.push(term::int(coefs[n-1].clone()));
-            for (i,&v) in var_map.iter().enumerate() {
-                if i != n-1 {
+            //            dbg!(&coefs);
+            add_terms.push(term::int(coefs[n - 1].clone()));
+            for (i, &v) in var_map.iter().enumerate() {
+                if i != n - 1 {
                     let v_term = term::var(v, self.instance[pred].sig()[v].clone());
                     add_terms.push(term::cmul(coefs[i].clone(), v_term));
                 }
@@ -394,54 +420,68 @@ impl ArgCondEqReductor {
         }
     }
 
-    fn call_external_synthesizer(&self, pred: PrdIdx, var_map: &Vec<VarIdx>, vectors: &Vec<Vec<BigInt>>) -> Res<(Term,VarSet)> {
+    fn call_external_synthesizer(
+        &self,
+        pred: PrdIdx,
+        var_map: &Vec<VarIdx>,
+        vectors: &Vec<Vec<BigInt>>,
+    ) -> Res<(Term, VarSet)> {
         // Make input file
-//        dbg!(vectors);
-        let input = "output.csv";
-        let input_path = Path::new(input);
+        //        dbg!(vectors);
+        let filepath = Path::new(conf.in_file().unwrap());
         let cmd = "cond_eq";
-        let mut file = File::create(&input_path)?;
+        let inputpath = filepath.with_extension("ceq.csv");
+        let inputpath_str = &inputpath.to_str().unwrap().clone();
+        let mut file = File::create(&inputpath)?;
         writeln!(file, "{}", vectors.len())?;
         for vec in vectors {
-            let csv = vec.iter().map(|x| x.to_string()).collect::<Vec<String>>().join(",");
+            let csv = vec
+                .iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<String>>()
+                .join(",");
             writeln!(file, "{}", csv)?;
         }
 
         // Execute synthesizer
-        let _output = Command::new(cmd).arg(input).output()?;
+        let _output = Command::new(cmd).arg(inputpath_str).output()?;
 
         // Read result
-        let output_path = input_path.with_extension("result");
+        let output_path = filepath.with_extension("ceq.result");
         let reader = BufReader::new(File::open(output_path).unwrap());
         let mut r: Vec<Term> = Vec::new();
         let mut iter = reader.lines().into_iter();
-        let num_cand : usize = iter.next().unwrap()?.parse().unwrap();
+        let num_cand: usize = iter.next().unwrap()?.parse().unwrap();
         let mut removes = VarSet::new();
         for _ in 1..=num_cand {
-            let var_idx : usize = iter.next().unwrap()?.parse().unwrap();
+            let var_idx: usize = iter.next().unwrap()?.parse().unwrap();
             let var = var_map[var_idx];
-//            dbg!(var);
+            //            dbg!(var);
             removes.insert(var.into());
-            let num_conj : usize = iter.next().unwrap()?.parse().unwrap();
+            let num_conj: usize = iter.next().unwrap()?.parse().unwrap();
             let mut guard_terms: Vec<Term> = Vec::new();
             let mut and_terms = Vec::new();
             for n in 1..=num_conj {
-                fn parse_csv(iter : &mut Lines<BufReader<File>>) -> Res<Vec<BigInt>> {
-                    Ok (iter.next().unwrap()?.split(',').map(|s| s.parse::<BigInt>().unwrap()).collect())
+                fn parse_csv(iter: &mut Lines<BufReader<File>>) -> Res<Vec<BigInt>> {
+                    Ok(iter
+                        .next()
+                        .unwrap()?
+                        .split(',')
+                        .map(|s| s.parse::<BigInt>().unwrap())
+                        .collect())
                 }
                 let mut equality_coefs = parse_csv(&mut iter)?;
-//                dbg!(&equality_coefs);
-                let guard_term =
-                    if n != num_conj {
-                        let mut guard_coefs = parse_csv(&mut iter)?;
-                        let guard_term = self.construct_guard(pred, &var_map, &mut guard_coefs);
-                        guard_terms.push(guard_term.clone());
-                        guard_term
-                    } else {
-                        term::not(term::or(guard_terms.clone()))
-                    };
+                //                dbg!(&equality_coefs);
+                let guard_term = if n != num_conj {
+                    let mut guard_coefs = parse_csv(&mut iter)?;
+                    let guard_term = self.construct_guard(pred, &var_map, &mut guard_coefs);
+                    guard_terms.push(guard_term.clone());
+                    guard_term
+                } else {
+                    term::not(term::or(guard_terms.clone()))
+                };
                 let equality_term = self.construct_equality(pred, &var_map, &mut equality_coefs);
-//                dbg!(&equality_term);
+                //                dbg!(&equality_term);
                 let term = term::implies(guard_term, equality_term);
                 and_terms.push(term);
             }
@@ -451,11 +491,11 @@ impl ArgCondEqReductor {
 
         let mut keeps = VarSet::new();
         for (var, _) in self.instance[pred].sig().index_iter() {
-            if ! removes.contains(&var) {
+            if !removes.contains(&var) {
                 keeps.insert(var);
             }
         }
-        Ok ((term::and(r), keeps))
+        Ok((term::and(r), keeps))
     }
 
     fn generate_constraints(&mut self) -> Res<()> {
@@ -478,7 +518,7 @@ impl ArgCondEqReductor {
                     }
                 }
 
-//                dbg!(samples);
+                //                dbg!(samples);
 
                 let iter = samples.iter();
                 let mut vectors = Vec::with_capacity(samples.len());
@@ -490,13 +530,12 @@ impl ArgCondEqReductor {
                     }
                     vectors.push(vector);
                 }
-                let (term,keeps) =
-                    if samples.is_empty() {
-                        (term::fls(), VarSet::new())
-                    } else {
-                        self.call_external_synthesizer(pred, &var_map, &vectors)?
-                    };
-                raw_constraints.push(Some((term,keeps)));
+                let (term, keeps) = if samples.is_empty() {
+                    (term::fls(), VarSet::new())
+                } else {
+                    self.call_external_synthesizer(pred, &var_map, &vectors)?
+                };
+                raw_constraints.push(Some((term, keeps)));
             } else {
                 raw_constraints.push(None);
             }
@@ -513,7 +552,7 @@ impl ArgCondEqReductor {
                 for (var, _) in self.instance[pred].sig().index_iter() {
                     keep.insert(var);
                 }
-            } else if let Some((term,keep_var)) = raw_constraint {
+            } else if let Some((term, keep_var)) = raw_constraint {
                 constraints.push(Some(term.clone()));
                 keep = keep_var.clone();
             } else {
@@ -529,9 +568,7 @@ impl ArgCondEqReductor {
         Ok(())
     }
 
-    fn print_data(
-        &mut self,
-    ) -> Res<()> {
+    fn print_data(&mut self) -> Res<()> {
         println!("{}", self.data.string_do(&(), |s| s.to_string())?);
         Ok(())
     }
@@ -539,11 +576,11 @@ impl ArgCondEqReductor {
     /// Runs itself on all clauses of an instance.
     pub fn run(mut self) -> Res<(PrdHMap<crate::preproc::PredExtension>, PrdHMap<VarSet>)> {
         loop {
-/*
-            let mut s = String::new();
-            let _ = std::io::stdin().read_line(&mut s);
-            println!("---------------------------------------------------------------------------------");
-*/
+            /*
+                        let mut s = String::new();
+                        let _ = std::io::stdin().read_line(&mut s);
+                        println!("---------------------------------------------------------------------------------");
+            */
             if !self.handle_candidates()? {
                 break;
             }
@@ -564,7 +601,6 @@ impl ArgCondEqReductor {
                 constraints.insert(pred, (set, vec![]));
             }
         }
-
 
         let mut to_keep = PrdHMap::new();
         for (pred, vars) in ::std::mem::replace(&mut self.keep, PrdMap::new()).into_index_iter() {

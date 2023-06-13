@@ -454,7 +454,7 @@ make_conf! {
             val_name bool_format,
             val_nb 1,
             validator bool_validator,
-            default "on",
+            default "off",
             hidden,
         } {
             |val| bool_of_match(val)
